@@ -140,7 +140,7 @@ function RandomizePage() {
     const imageUrls = overlayImages.map((layer) => {
       const layerId = layer.layerId;
       const images = layer.images.map((image) => {
-        return `https://res.cloudinary.com/dtksvajmx/image/upload/v1691356199/Image-randomizer/${projectId}/${layerId}/${image}`;
+        return `https://res.cloudinary.com/dtksvajmx/image/upload/v1691356199/image-jumble/${projectId}/${layerId}/${image}`;
       });
       return images;
     });

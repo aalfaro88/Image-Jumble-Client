@@ -1,52 +1,188 @@
-// pages/projectPage
-
 import { useParams, Link } from "react-router-dom";
 import { useEffect, useState, useRef } from "react";
-import { get, post, uploadImage } from "../services/authService";
-
+import { get, post, uploadImage, deleteCloudinaryFolder, del } from "../services/authService";
 
 function ProjectPage() {
   const { projectId } = useParams();
   const [project, setProject] = useState(null);
-  const [newLayerName, setNewLayerName] = useState("");
+  const [newPathName, setNewPathName] = useState("");
+  const [newLayerNames, setNewLayerNames] = useState({});
+  const [selectedPathId, setSelectedPathId] = useState(null);
   const [layerImages, setLayerImages] = useState({});
-  const [addingLayer, setAddingLayer] = useState(false);
   const [selectedLayer, setSelectedLayer] = useState(null); 
   const [loadingImages, setLoadingImages] = useState(false);
-  
 
-  const imageGalleryRef = useRef(null);
+  useEffect(() => {
+    get(`/projects/${projectId}`)
+      .then((response) => {
+        setProject(response.data);
+      })
+      .catch((error) => {
+        console.error("Error fetching project:", error);
+      });
+  }, [projectId]);
 
-  const handleDragOver = (e) => {
-    e.preventDefault();
-    e.stopPropagation();
-    if (e.dataTransfer.types.includes("Files")) {
-      imageGalleryRef.current.style.background = "lightgray";
+
+// PATH FUNCTIONALITIES:
+  const selectPath = (pathId) => {
+    setSelectedPathId(pathId);
+  };
+
+  const getNextPathName = () => {
+    const lastPath = project.paths[project.paths.length - 1];
+    if (!lastPath) {
+      return 'Path 1';
     }
+    const lastPathNumber = parseInt(lastPath.name.split(' ')[1]);
+    return `Path ${isNaN(lastPathNumber) ? project.paths.length + 1 : lastPathNumber + 1}`;
+  };
+
+  const handleAddPath = () => {
+    const pathName = newPathName.trim() || getNextPathName();
+
+    post(`/projects/${projectId}/paths`, { name: pathName })
+      .then(() => {
+        get(`/projects/${projectId}`)
+          .then((response) => {
+            setProject(response.data);
+          })
+          .catch((error) => {
+            console.error("Error fetching updated project data:", error);
+          });
+        setNewPathName("");
+      })
+      .catch((error) => {
+        console.error("Error adding path:", error);
+      });
+  };
+
+// LAYERS FUNCTIONALITIES:
+  const getNextLayerName = (pathId) => {
+    const path = project.paths.find((p) => p._id === pathId);
+    if (!path) {
+      return 'Layer 1';
+    }
+    const lastLayer = path.layers[path.layers.length - 1];
+    if (!lastLayer) {
+      return 'Layer 1';
+    }
+    const lastLayerNumber = parseInt(lastLayer.name.split(' ')[1]);
+    return `Layer ${isNaN(lastLayerNumber) ? path.layers.length + 1 : lastLayerNumber + 1}`;
+  };
+
+  const handleAddLayer = (pathId) => {
+    const layerName = newLayerNames[pathId]?.trim() || getNextLayerName(pathId);
+
+    const newLayer = { name: layerName, images: [] };
+
+    post(`/projects/${projectId}/paths/${pathId}/layers`, newLayer)
+      .then(() => {
+        get(`/projects/${projectId}`)
+          .then((response) => {
+            setProject(response.data);
+            setNewLayerNames((prevLayerNames) => ({
+              ...prevLayerNames,
+              [pathId]: "",
+            }));
+          })
+          .catch((error) => {
+            console.error("Error fetching updated project data:", error);
+          });
+      })
+      .catch((error) => {
+        console.error("Error adding layer:", error);
+      });
+  };
+
+  const handleClick = (layerId) => {
+    setSelectedLayer(layerId);
   };
   
-  const handleDragLeave = (e) => {
-    e.preventDefault();
-    e.stopPropagation();
-    if (e.dataTransfer.types.includes("Files")) {
-      imageGalleryRef.current.style.background = "transparent"; // Change this to the desired background color
-    }
+  const handlePathClick = () => {
+    setSelectedLayer(null); 
   };
   
+
+  // IMAGE FUNCTIONALITIES:
   
-  const handleDrop = async (e) => {
-    e.preventDefault();
-    e.stopPropagation();
+  const fetchImagesForLayers = async (pathId, layers, selectedLayerId) => {
+    const newLayerImages = {};
+  
+    if (selectedLayerId) {
+      await Promise.all(
+        layers.map(async (layer) => {
+          if (layer._id === selectedLayerId) {
+            try {
+              const response = await get(`/projects/${projectId}/paths/${pathId}/layers/${layer._id}/images`);
+              newLayerImages[layer._id] = response.data.images;
+            } catch (error) {
+              console.error("Error fetching images for layer:", layer._id, error);
+            }
+          }
+        })
+      );
+  
+      setLayerImages(newLayerImages);
+    }
+  };
+ 
+  const deleteImage = async (pathId, layerId, imageId) => {
+    try {
+      // Delete image from Cloudinary
+      await fetch(`/api/images/${imageId}`, { method: 'DELETE' });
+  
+      // Update MongoDB data to remove the image
+      await post(`/projects/${projectId}/paths/${pathId}/layers/${layerId}/deleteImage`, { imageId });
+  
+      // Fetch updated images and update the state
+      const selectedPath = project.paths.find((path) => path._id === selectedPathId);
+      fetchImagesForLayers(selectedPath._id, selectedPath.layers, selectedLayer);
+    } catch (error) {
+      console.error('Error deleting image:', error);
+    }
+  };
+
+useEffect(() => {
+  if (selectedPathId && selectedLayer) {
+    const selectedPath = project.paths.find((path) => path._id === selectedPathId);
+    fetchImagesForLayers(selectedPath._id, selectedPath.layers, selectedLayer);
+  }
+}, [selectedPathId, selectedLayer]);
+
+
+    
+const imageGalleryRef = useRef(null);
+
+  
+const handleDragOver = (e) => {
+  e.preventDefault();
+  e.stopPropagation();
+  if (e.dataTransfer.types.includes("Files")) {
+    imageGalleryRef.current.style.background = "lightgray";
+  }
+};
+  
+const handleDragLeave = (e) => {
+  e.preventDefault();
+  e.stopPropagation();
+  if (e.dataTransfer.types.includes("Files")) {
     imageGalleryRef.current.style.background = "transparent"; 
+  }
+};
   
-    const droppedFiles = Array.from(e.dataTransfer.files);
-    console.log("Dropped Files:", droppedFiles);
-    setLoadingImages(true);
   
-    if (droppedFiles.length > 0) {
-      try {
-        const names = droppedFiles.map((file) => file.name);
-        const uniqueNames = names.filter((name) => !layerImages[selectedLayer]?.includes(name));
+const handleDrop = async (e) => {
+  e.preventDefault();
+  e.stopPropagation();
+  imageGalleryRef.current.style.background = "transparent";
+  
+  const droppedFiles = Array.from(e.dataTransfer.files);
+  setLoadingImages(true);
+  
+  if (droppedFiles.length > 0) {
+    try {
+      const names = droppedFiles.map((file) => file.name);
+      const uniqueNames = names.filter((name) => !layerImages[selectedLayer]?.includes(name));
   
         if (uniqueNames.length === 0) {
           setLoadingImages(false);
@@ -66,13 +202,12 @@ function ProjectPage() {
         const newIdentifiers = uniqueIdentifiers.filter((identifier) => !existingIdentifiers.includes(identifier));
   
         if (newIdentifiers.length === 0) {
-
           setLoadingImages(false);
           console.log("No new images to add.");
           return;
         }
   
-        post(`/projects/${projectId}/layers/${selectedLayer}/images`, { names: uniqueNames })
+        post(`/projects/${projectId}/paths/${selectedPathId}/layers/${selectedLayer}/images`, { names: uniqueNames }) 
           .then((response) => {
             console.log("Image names added to MongoDB:", response.data);
           })
@@ -80,22 +215,35 @@ function ProjectPage() {
             console.error("Error adding image names to MongoDB:", error);
           });
   
-        const imageIds = await Promise.all(
-          uniqueNames.map((name) => uploadImage(droppedFiles.find(file => file.name === name), projectId, selectedLayer))
-        );
+          const imageIds = await Promise.all(
+            uniqueNames.map((name) => uploadImage(droppedFiles.find(file => file.name === name), projectId, selectedPathId, selectedLayer)) 
+          );
 
-        fetchImagesForLayers(project.layers)
+          setLayerImages((prevLayerImages) => ({
+            ...prevLayerImages,
+            [selectedLayer]: [...(prevLayerImages[selectedLayer] || []), ...imageIds],
+          }));
+
+        fetchImagesForLayers(selectedPathId, project.paths.find((path) => path._id === selectedPathId).layers, selectedLayer);
+
         setLoadingImages(false);
-        
+  
         const updatedProject = {
           ...project,
-          layers: project.layers.map((layer) =>
-            layer._id === selectedLayer
+          paths: project.paths.map((path) =>
+            path._id === selectedPathId
               ? {
-                  ...layer,
-                  images: [...layer.images, ...imageIds],
+                  ...path,
+                  layers: path.layers.map((layer) =>
+                    layer._id === selectedLayer
+                      ? {
+                          ...layer,
+                          images: [...layer.images, ...imageIds],
+                        }
+                      : layer
+                  ),
                 }
-              : layer
+              : path
           ),
         };
   
@@ -105,122 +253,104 @@ function ProjectPage() {
       }
     }
   };
-  
 
-  const fetchImagesForLayers = async (layers) => {
-    const newLayerImages = {};
+  const handleDeletePath = async (pathId) => {
+    try {
+      await deleteCloudinaryFolder(projectId, pathId);
+      
+      await del(`/projects/${projectId}/paths/${pathId}`);
+      
+      setProject((prevProject) => {
+        const updatedPaths = prevProject.paths.filter((path) => path._id !== pathId);
+        return { ...prevProject, paths: updatedPaths };
+      });
   
-    await Promise.all(
-      layers.map(async (layer) => {
-        try {
-          const response = await get(`/projects/${projectId}/layers/${layer._id}/images`);
-          newLayerImages[layer._id] = response.data.images; 
-        } catch (error) {
-          console.error("Error fetching images for layer:", layer._id, error);
-        }
-      })
-    );
-  
-    setLayerImages(newLayerImages);
+      if (selectedPathId === pathId) {
+        setSelectedPathId(null);
+        setSelectedLayer(null);
+        setLayerImages({});
+      }
+    } catch (error) {
+      console.error("Error deleting path:", error);
+    }
   };
   
-
-  useEffect(() => {
-    get(`/projects/${projectId}`)
-      .then((response) => {
-        setProject(response.data);
-        fetchImagesForLayers(response.data.layers);
-      })
-      .catch((error) => {
-        console.error("Error fetching project:", error);
-      });
-  }, [projectId]);
-
-  useEffect(() => {
-    if (project && project.layers.length > 0) {
-      const newlyAddedLayerName = project.layers[project.layers.length - 1]._id;
-      console.log("Newly added layer name:", newlyAddedLayerName);
-    }
-  }, [project]);
 
   if (!project) {
     return <div>Loading...</div>;
   }
 
-  const handleAddLayer = () => {
-    setAddingLayer(true);
-  
-    const newLayer = {
-      name: newLayerName.trim() || `Layer ${project.layers.length + 1}`,
-      images: [],
-    };
-  
-    post(`/projects/${projectId}/layers`, newLayer)
-      .then((response) => {
-        get(`/projects/${projectId}`)
-          .then((response) => {
-            setProject(response.data);
-            setNewLayerName("");
-            setAddingLayer(false);
-  
-            console.log("Newly added layer ID:", response.data.layers[response.data.layers.length - 1]._id);
-          })
-          .catch((error) => {
-            console.error("Error fetching project:", error);
-            setAddingLayer(false);
-          });
-      })
-      .catch((error) => {
-        console.error("Error adding layer:", error);
-        setAddingLayer(false);
-      });
-  };
-  
-
-  const handleLayerClick = (layerId) => {
-    setSelectedLayer(layerId);
-  };
-
   return (
     <div>
-      <div className="project-page-head">
-        <h2>{project.name}</h2>
-        <Link to={`/randomize?projectId=${projectId}`}>
-          <button className="randomize-button">Ready to Randomize</button>
-        </Link>
+      <h2>{project.name}</h2>
+      <div>
+        <input
+          type="text"
+          placeholder="Add Path name"
+          value={newPathName}
+          onChange={(e) => setNewPathName(e.target.value)}
+        />
+        <button onClick={handleAddPath}>Add Path</button>
       </div>
-      <div className="project-layout">
-      <div className="layer-list">
-          <h2>Layers</h2>
-           {project.layers.map((layer) => (
-           <div
-             key={layer._id}
-             className={`layer ${selectedLayer === layer._id ? "active" : ""}`}
-             onClick={() => handleLayerClick(layer._id)}
-           >
-             {layer.name}
-           </div>
-       ))}
-        <div className="add-layer">
-          <div className="input-container">
+      <h3>Paths:</h3>
+      <ul>
+      {project.paths.map((path) => (
+        <li key={path._id}>
+          <div style={{ display: 'flex', alignItems: 'center' }}>
+            <h4 onClick={() => { selectPath(path._id); handlePathClick(); }} style={{ cursor: 'pointer', marginRight: '1rem' }}>
+              {path.name}
+            </h4>
+            <button onClick={() => handleDeletePath(path._id)}>Delete Path</button>
+
+          </div>
+        </li>
+      ))}
+
+      </ul>
+      {selectedPathId && (
+        <div>
+          <h3>Selected Path Layers:</h3>
+          <ul>
+          {project.paths
+            .find((path) => path._id === selectedPathId)
+            .layers.map((layer) => (
+              <li key={layer._id}>
+                <h4
+                  onClick={() => handleClick(layer._id)} 
+                  style={{ cursor: 'pointer' }}
+                >
+                  {layer.name}
+                </h4>
+              </li>
+            ))}
+
+          </ul>
+          <div>
             <input
               type="text"
-              value={newLayerName}
-              onChange={(e) => setNewLayerName(e.target.value)}
-              placeholder="Layer Name"
+              placeholder="Add Layer name"
+              value={newLayerNames[selectedPathId] || ""}
+              onChange={(e) => {
+                const value = e.target.value;
+                setNewLayerNames((prevLayerNames) => ({
+                  ...prevLayerNames,
+                  [selectedPathId]: value,
+                }));
+              }}
             />
+            <button
+              onClick={() => {
+                handleAddLayer(selectedPathId);
+              }}
+            >
+              Add Layer
+            </button>
+            <button onClick={() => console.log('PathID:', selectedPathId)}>Check</button>
           </div>
-          <img
-            src="/images/addButton.png"
-            alt="Add New Layer"
-            onClick={handleAddLayer}
-            style={{ cursor: 'pointer' }}
-            className="add-button"
-          />
         </div>
-
-       </div>
-       <div className="layer-images" 
+      )}
+<div className="layer-images"
+    ref={imageGalleryRef}
      onDragOver={handleDragOver} 
      onDragLeave={handleDragLeave} 
      onDrop={handleDrop}>
@@ -229,20 +359,26 @@ function ProjectPage() {
       <div className="loading-spinner2"></div>
       <p>Uploading images. Please wait...</p>
     </div>
-  ) : selectedLayer ? (
+ ) : selectedLayer && layerImages[selectedLayer] ? ( 
     <div ref={imageGalleryRef} className="gallery-support">
-      <h1>{project.layers.find(layer => layer._id === selectedLayer)?.name}</h1>
-      <div className="image-gallery">
-        {layerImages[selectedLayer]?.map((imageName, idx) => (
-          <div key={idx} className="image-wrapper">
-            <img
-              src={`https://res.cloudinary.com/dtksvajmx/image/upload/v1691356199/Image-randomizer/${project._id}/${selectedLayer}/${imageName}`}
-              alt={imageName}
-              className="image"
-            />
-          </div>
-        ))}
-      </div>
+<h1>
+  {project.paths
+    .find((path) => path._id === selectedPathId)
+    .layers.find((layer) => layer._id === selectedLayer)?.name}
+</h1>
+<div className="image-gallery">
+{layerImages[selectedLayer]?.map((imageName, idx) => (
+  <div key={idx} className="image-wrapper">
+    <img
+      src={`https://res.cloudinary.com/dtksvajmx/image/upload/v1691356199/image-jumble/${project._id}/${selectedPathId}/${selectedLayer}/${imageName}`}
+      alt={imageName}
+      className="image"
+    />
+  </div>
+))}
+
+</div>
+
     </div>
   ) : (
     <div>
@@ -253,11 +389,9 @@ function ProjectPage() {
 </div>
 
     </div>
-    </div>
+
   );
 }
 
-
-
-
 export default ProjectPage;
+

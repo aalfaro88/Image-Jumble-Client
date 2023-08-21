@@ -35,37 +35,37 @@ export const del = (route) => {
   });
 };
 
-export const uploadImage = async (file, projectId, layerId) => {
-    console.log("Project ID:", projectId);
-    console.log("Layer ID:", layerId);
-    console.log("Image Name:", file.name);
-  
-    const formData = new FormData();
-    formData.append("picture", file);
-    console.log("This is file:",file)
-    console.log(typeof file)
-  
-    const token = localStorage.getItem("authToken");
-  
-    return axios
-      .post(SERVER_URL + `/upload-image/${projectId}/${layerId}`, formData, {
+export const uploadImage = async (file, projectId, pathId, layerId) => {
+  const formData = new FormData();
+  formData.append("picture", file);
+
+  const token = localStorage.getItem("authToken");
+
+  return axios
+    .post(
+      `${SERVER_URL}/upload-image/${projectId}/${pathId}/${layerId}/`,
+      formData,
+      {
         headers: {
           Authorization: `Bearer ${token}`,
           "Content-Type": "multipart/form-data",
         },
-      })
-      .then((response) => {
-        console.log(projectId)
-        console.log(layerId)
-        console.log("Response Data:", response.data);
-        return response.data.imageId;
-      });
-  };
+      }
+    )
+    .then((response) => {
+      return response.data.imageId;
+    });
+};
 
-  export const getProjectImages = (projectId, layerId) => {
-    return get(`/images/${projectId}/${layerId}`);
-  };
-  
-  export const deleteCloudinaryFolder = (projectId) => {
-    return axios.delete(`${SERVER_URL}/delete-cloudinary-folder/${projectId}`);
-  };
+
+export const getProjectImages = (projectId, pathId, layerId) => {
+  return get(
+    `/images/${projectId}/${pathId}/${layerId}`
+  );
+};
+
+export const deleteCloudinaryFolder = (projectId) => {
+  return axios.delete(`${SERVER_URL}/delete-cloudinary-folder/${projectId}`);
+};
+
+
