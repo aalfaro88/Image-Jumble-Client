@@ -69,3 +69,13 @@ export const deleteCloudinaryFolder = (projectId) => {
 };
 
 
+export const deleteCloudinaryPath = (projectId, pathId) => {
+  return axios.delete(`${SERVER_URL}/delete-cloudinary-folder/paths/${projectId}/${pathId}`);
+};
+
+
+export const deleteCloudinaryLayers = (projectId, pathId, layerId) => {
+  return axios.delete(`${SERVER_URL}/delete-cloudinary-folder/layers/${projectId}/${pathId}/${layerId}`);
+};
+
+ 
