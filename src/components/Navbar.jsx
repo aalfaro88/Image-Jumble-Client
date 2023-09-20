@@ -20,9 +20,6 @@ function Navbar() {
       <div className="right-buttons">
         {getToken() ? (
           <>
-            <Link to="/matrix">
-              <button>Matrix Project</button>
-            </Link>
             <Link to="/projects">
               <button>Projects</button>
             </Link>

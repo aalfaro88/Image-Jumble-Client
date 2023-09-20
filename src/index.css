@@ -678,6 +678,51 @@ a:hover{
   cursor: not-allowed;
 }
 
+/* Add these styles to your CSS file */
+
+.path-summary.active {
+  background-color: #f0f0f010; /* Change this to the desired active background color */
+}
+
+/* Style for the active layer */
+.layer-summary.active {
+  background-color: #e0e0e014; /* Change this to the desired active background color */
+}
+
+/* Show the images when the layer is active */
+.layer-summary.active .image-names {
+  display: block;
+}
+
+/* Hide the images when the layer is not active */
+.layer-summary .image-names {
+  display: none;
+}
+
+/* Hide the layers when the path is not active */
+.path-summary:not(.active) .layer-summary {
+  display: none;
+}
+
+/* Apply these styles to target the table within the custom wrapper */
+.custom-table-wrapper table {
+  border-collapse: collapse;
+  width: 100%;
+}
+
+.custom-table-wrapper th,
+.custom-table-wrapper td {
+  border: 1px solid black;
+  padding: 8px;
+  text-align: left;
+}
+
+.custom-table-wrapper th {
+  background-color: #f2f2f214;
+}
+
+
+
 /* PAYMENT */
 
 /* CSS for the modal */
@@ -792,3 +837,18 @@ a:hover{
   transform: translate(50%, -50%); /* Center horizontally */
 }
 
+
+
+
+/* TEMPORARY ADDITIONAL HELPERS */
+
+.stacked-images {
+  position: relative;
+}
+
+.preview-image {
+  position: absolute;
+  max-height: 400px;
+  top: 0; /* Adjust top position as needed */
+  left: 0; /* Adjust left position as needed */
+}

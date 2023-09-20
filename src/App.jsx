@@ -8,7 +8,6 @@ import ProjectPage from "./pages/ProjectPage";
 import ProjectsPage from "./pages/ProjectsPage";
 import RandomizePage from './pages/RandomizePage';
 import UserProfile from "./pages/UserProfile";
-import MatrixPage from "./pages/MatrixPage";
 
 function App() {
   const getToken = () => {
@@ -34,7 +33,6 @@ function App() {
         <Route path="/projects/:projectId" element={<ProjectPage />} />
         <Route path="/randomize" element={<RandomizePage />} />
         <Route path="/user-profile/:userId" element={<UserProfile />} />
-        <Route path="/matrix" element={<MatrixPage />} />
         <Route element={<LoggedIn />}>
         </Route>
 

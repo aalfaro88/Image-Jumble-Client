@@ -14,6 +14,8 @@ function ProjectPage() {
   const [editingPathId, setEditingPathId] = useState(null);
   const [editedPathName, setEditedPathName] = useState("");
   const [editedLayerNames, setEditedLayerNames] = useState({});
+  const [paths, setPaths] = useState([]);
+  
 
 
   useEffect(() => {
@@ -26,6 +28,20 @@ function ProjectPage() {
       });
   }, [projectId]);
 
+  useEffect(() => {
+    const fetchInitialPaths = async () => {
+      try {
+        const response = await get(`/projects/${projectId}/paths`);
+        setPaths(response.data);
+      } catch (error) {
+        console.error('Failed to fetch initial paths', error);
+      }
+    };
+
+    fetchInitialPaths();
+  }, [projectId]);
+
+  
 
 // PATH FUNCTIONALITIES:
   const selectPath = (pathId) => {
@@ -95,52 +111,92 @@ function ProjectPage() {
       console.error('Error updating path name:', error);
     }
   };
-  
- 
-  // const handleAddClonedLayers = async (clonedPathId, selectedPath) => {
-  //   console.log("Adding layers to Cloned Path ID:", clonedPathId);
-  //   try {
-  //     const clonedLayers = selectedPath.layers.map((layer) => ({
-  //       name: layer.name,
-  //       images: layer.images,
-  //     }));
-  
-  //     // Create cloned layers for the cloned path
-  //     await Promise.all(
-  //       clonedLayers.map(async (clonedLayer) => {
-  //         const clonedLayerResponse = await post(`/projects/${projectId}/paths/${clonedPathId}/layers`, clonedLayer);
-  //         console.log("Cloned Layer ID:", clonedLayerResponse.data._id);
-  //       })
-  //     );
-  
-  //     // Fetch the updated project data
-  //     const updatedProjectResponse = await get(`/projects/${projectId}`);
-  //     setProject(updatedProjectResponse.data);
-  //   } catch (error) {
-  //     console.error("Error adding cloned layers:", error);
-  //   }
-  // };
-  
-  const handleClonePath = async (pathId) => {
-    console.log(pathId)
-    // try {
-    //   // Clone the path
-    //   const response = await post(`/projects/${projectId}/paths/${pathId}/clone`);
-    //   const clonedPath = response.data;
 
-    //   // Update project state
-    //   setProject(prevProject => {
-    //     const updatedPaths = [...prevProject.paths, clonedPath];
-    //     return { ...prevProject, paths: updatedPaths };
-    //   });
-
-    //   // Select the cloned path by setting its ID
-    //   setSelectedPathId(clonedPath._id);
-    // } catch (error) {
-    //   console.error("Error cloning path:", error);
-    // }
+  const handleDeletePath = async (pathId) => {
+    try {
+      await deleteCloudinaryPath(projectId, pathId);
+        
+      await del(`/projects/${projectId}/paths/${pathId}`);
+        
+      setProject((prevProject) => {
+        const updatedPaths = prevProject.paths.filter((path) => path._id !== pathId);
+        return { ...prevProject, paths: updatedPaths };
+      });
+  
+      if (selectedPathId === pathId) {
+        setSelectedPathId(null);
+        setSelectedLayer(null);
+        setLayerImages({});
+      }
+    } catch (error) {
+      console.error("Error deleting path:", error);
+    }
   };
   
+const handleClonePath = async (pathId) => {
+  // Step 1: Find the path object using the path ID
+  const path = project.paths.find((p) => p._id === pathId);
+
+  if (!path) {
+    console.error("Path not found");
+    return;
+  }
+
+  // Prepare data to be sent to the server
+  const dataToSend = {
+    pathName: path.name,
+    layers: path.layers.map((layer) => {
+      // Check if there are images for this layer and filter out 'None' names
+      const images = layerImages[layer._id]
+        ? Object.values(layerImages[layer._id]).filter((img) => img.name !== 'None').map((img) => img.name)
+        : [];
+
+      return {
+        layerName: layer.name,
+        images,
+      };
+    }),
+  };
+
+  try {
+    // Assuming projectId is available in the current scope; if not, retrieve it appropriately
+    const route = `/projects/${project._id}/paths/${path._id}/clone`;
+    const response = await post(route, dataToSend);
+
+    if (response.status === 201) {
+      // Update the project state with the new path
+      setProject((prevProject) => {
+        return {
+          ...prevProject,
+          paths: [...prevProject.paths, response.data],
+        };
+      });
+
+      // Set the selected path ID to the ID of the newly cloned path
+      setSelectedPathId(response.data._id);
+
+      // Update the layerImages state with the data for the new path
+      setLayerImages((prevLayerImages) => {
+        const newLayerImages = { ...prevLayerImages };
+        dataToSend.layers.forEach((layer, index) => {
+          console.log('Individual response data layers:', response.data.layers[index]);
+          newLayerImages[response.data.layers[index]._id] = {};
+          layer.images.forEach((imageName) => {
+            newLayerImages[response.data.layers[index]._id][imageName] = { name: imageName };
+          });
+        });
+        console.log('Updated layerImages:', newLayerImages);
+        return newLayerImages;
+      });
+
+      // Reset the selected layer to its default value to trigger the fetching of layers
+      setSelectedLayer(null);
+      window.location.reload();
+    }
+  } catch (error) {
+    console.error('Failed to clone path', error);
+  }
+};
 
 // LAYERS FUNCTIONALITIES:
   const getNextLayerName = (pathId) => {
@@ -320,21 +376,6 @@ function ProjectPage() {
     }
   };
  
-  const deleteImage = async (pathId, layerId, imageId) => {
-    try {
-      // Delete image from Cloudinary
-      await fetch(`/api/images/${imageId}`, { method: 'DELETE' });
-  
-      // Update MongoDB data to remove the image
-      await post(`/projects/${projectId}/paths/${pathId}/layers/${layerId}/deleteImage`, { imageId });
-  
-      // Fetch updated images and update the state
-      const selectedPath = project.paths.find((path) => path._id === selectedPathId);
-      fetchImagesForLayers(selectedPath._id, selectedPath.layers, selectedLayer);
-    } catch (error) {
-      console.error('Error deleting image:', error);
-    }
-  };
 
 useEffect(() => {
   if (selectedPathId && selectedLayer) {
@@ -369,106 +410,97 @@ const handleDrop = async (e) => {
   e.preventDefault();
   e.stopPropagation();
   imageGalleryRef.current.style.background = "transparent";
-  
+  console.log("Preparing to add image names to MongoDB and upload to Cloudinary!");
+
   const droppedFiles = Array.from(e.dataTransfer.files);
   setLoadingImages(true);
-  
+
   if (droppedFiles.length > 0) {
     try {
       const names = droppedFiles.map((file) => file.name);
-      const uniqueNames = names.filter((name) => !layerImages[selectedLayer]?.includes(name));
-  
-        if (uniqueNames.length === 0) {
-          setLoadingImages(false);
-          console.log("No new images to add.");
-          return;
-        }
-  
-        const uniqueIdentifiers = await Promise.all(
-          droppedFiles.map(async (file) => {
-            const arrayBuffer = await file.arrayBuffer();
-            const hashArray = new Uint8Array(await crypto.subtle.digest('SHA-256', arrayBuffer));
-            return Array.from(hashArray, (byte) => byte.toString(16).padStart(2, '0')).join('');
-          })
-        );
-  
-        const existingIdentifiers = layerImages[selectedLayer] || [];
-        const newIdentifiers = uniqueIdentifiers.filter((identifier) => !existingIdentifiers.includes(identifier));
-  
-        if (newIdentifiers.length === 0) {
-          setLoadingImages(false);
-          console.log("No new images to add.");
-          return;
-        }
-  
-        post(`/projects/${projectId}/paths/${selectedPathId}/layers/${selectedLayer}/images`, { names: uniqueNames }) 
-          .then((response) => {
-            console.log("Image names added to MongoDB:", response.data);
-          })
-          .catch((error) => {
-            console.error("Error adding image names to MongoDB:", error);
-          });
-  
-          const imageIds = await Promise.all(
-            uniqueNames.map((name) => uploadImage(droppedFiles.find(file => file.name === name), projectId, selectedPathId, selectedLayer)) 
-          );
+      const uniqueNames = names.filter(
+        (name) =>
+          !layerImages[selectedLayer]?.some((imageData) => imageData.name === name)
+      );
 
-          setLayerImages((prevLayerImages) => ({
-            ...prevLayerImages,
-            [selectedLayer]: [...(prevLayerImages[selectedLayer] || []), ...imageIds],
-          }));
-
-        fetchImagesForLayers(selectedPathId, project.paths.find((path) => path._id === selectedPathId).layers, selectedLayer);
-
+      if (uniqueNames.length === 0) {
         setLoadingImages(false);
-  
-        const updatedProject = {
-          ...project,
-          paths: project.paths.map((path) =>
-            path._id === selectedPathId
-              ? {
-                  ...path,
-                  layers: path.layers.map((layer) =>
-                    layer._id === selectedLayer
-                      ? {
-                          ...layer,
-                          images: [...layer.images, ...imageIds],
-                        }
-                      : layer
-                  ),
-                }
-              : path
-          ),
-        };
-  
-        setProject(updatedProject);
-      } catch (error) {
-        console.error("Error uploading images:", error);
+        console.log("No new images to add.");
+        return;
       }
-    }
-  };
 
-  const handleDeletePath = async (pathId) => {
-    try {
-      await deleteCloudinaryPath(projectId, pathId);
-        
-      await del(`/projects/${projectId}/paths/${pathId}`);
-        
-      setProject((prevProject) => {
-        const updatedPaths = prevProject.paths.filter((path) => path._id !== pathId);
-        return { ...prevProject, paths: updatedPaths };
-      });
-  
-      if (selectedPathId === pathId) {
-        setSelectedPathId(null);
-        setSelectedLayer(null);
-        setLayerImages({});
-      }
+      const rarities = Array(uniqueNames.length).fill(100);
+
+      // Add images to MongoDB
+      const response = await post(
+        `/projects/${projectId}/paths/${selectedPathId}/layers/${selectedLayer}/images`,
+        {
+          names: uniqueNames,
+          rarities: rarities,
+        }
+      );
+      console.log("Image names and rarities added to MongoDB:", response.data);
+
+      // Upload images to Cloudinary
+      const imageIds = await Promise.all(
+        uniqueNames.map((name) =>
+          uploadImage(
+            droppedFiles.find((file) => file.name === name),
+            projectId,
+            selectedPathId,
+            selectedLayer
+          )
+        )
+      );
+
+      // Update the layerImages state
+      setLayerImages((prevLayerImages) => ({
+        ...prevLayerImages,
+        [selectedLayer]: [
+          ...(prevLayerImages[selectedLayer] || []),
+          ...imageIds.map((id, index) => ({
+            name: uniqueNames[index],
+            rarity: rarities[index],
+            cloudinaryId: id,
+          })),
+        ],
+      }));
+
+      setLoadingImages(false);
     } catch (error) {
-      console.error("Error deleting path:", error);
+      console.error("Error adding image and uploading images:", error);
     }
-  };
+  }
+};
+
+const handleDeleteImage = (imageId) => {
+  // Log the received imageId
+  console.log('Received imageId:', imageId);
+
+  // Assuming you have the image data in the layerImages state
+  const imageName = getImageNameFromLayerImages(imageId);
   
+  // Log the name of the image
+  console.log('Deleting image:', imageName);
+
+  // Add the logic to delete the image here
+  // ...
+};
+
+
+const getImageNameFromLayerImages = (imageId) => {
+  for (const layerId in layerImages) {
+    const images = Object.values(layerImages[layerId]);
+    for (const imageData of images) {
+      if (imageData.cloudinaryId === imageId) {
+        return imageData.name;
+      }
+    }
+  }
+  return 'Image Not Found';
+};
+
+
 
   if (!project) {
     return <div>Loading...</div>;
@@ -477,6 +509,9 @@ const handleDrop = async (e) => {
   return (
     <div>
       <h2>{project.name}</h2>
+      <Link to={`/randomize?projectId=${projectId}`} className="randomize-button-link">
+        <button className="randomize-button">Randomize</button>
+      </Link>
       <div>
         <input
           type="text"
@@ -622,35 +657,46 @@ const handleDrop = async (e) => {
         onDragOver={handleDragOver} 
         onDragLeave={handleDragLeave} 
         onDrop={handleDrop}>
-        {loadingImages ? (
-          <div className="loading-overlay2">
-            <div className="loading-spinner2"></div>
-            <p>Uploading images. Please wait...</p>
-          </div>
-        ) : selectedLayer && layerImages[selectedLayer] ? (
-          <div ref={imageGalleryRef} className="gallery-support">
-            <h1>
-              {project.paths
-                .find((path) => path._id === selectedPathId)
-                .layers.find((layer) => layer._id === selectedLayer)?.name}
-            </h1>
-            <div className="image-gallery">
-              {layerImages[selectedLayer]?.map((imageName, idx) => (
+      {loadingImages ? (
+        <div className="loading-overlay2">
+          <div className="loading-spinner2"></div>
+          <p>Uploading images. Please wait...</p>
+        </div>
+      ) : selectedLayer && layerImages[selectedLayer] ? (
+        <div ref={imageGalleryRef} className="gallery-support">
+          <h1>
+            {project.paths
+              .find((path) => path._id === selectedPathId)
+              .layers.find((layer) => layer._id === selectedLayer)?.name}
+          </h1>
+          <div className="image-gallery">
+            {Object.values(layerImages[selectedLayer])
+              .filter((imageData) => imageData.name !== 'None') // Exclude images with the name "None"
+              .map((imageData, idx) => (
                 <div key={idx} className="image-wrapper">
                   <img
-                    src={`https://res.cloudinary.com/dtksvajmx/image/upload/v1691356199/image-jumble/${project._id}/${selectedPathId}/${selectedLayer}/${imageName}`}
-                    alt={imageName}
+                    src={`https://res.cloudinary.com/dtksvajmx/image/upload/v1691356199/image-jumble/${project._id}/${selectedPathId}/${selectedLayer}/${imageData.name}`}
+                    alt={imageData.name}
                     className="image"
                   />
+                  {/* Display rarity or any other relevant information from imageData */}
+                  <p>{imageData.name}</p>
+                  {/* <button
+                      onClick={() => handleDeleteImage(projectId, selectedPathId, selectedLayer, imageData.name)}
+                      className="delete-button"
+                    >
+                      Delete
+                    </button> */}
                 </div>
               ))}
-            </div>
           </div>
-        ) : (
-          <div>
-            <p className="no-layer">No layer selected.</p>
-          </div>
-        )}
+        </div>
+      ) : (
+        <div>
+          <p className="no-layer">No layer selected.</p>
+        </div>
+      )}
+
       </div>
 
       </div>
